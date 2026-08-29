@@ -15,8 +15,12 @@ def _click(app: GomokuApp, r: int, c: int) -> None:
     app.handle_event(pygame.event.Event(pygame.MOUSEBUTTONDOWN, button=1, pos=pos))
 
 
+def _make(mode: str = "pvp", sims: int = 100) -> GomokuApp:
+    return GomokuApp(mode=mode, sims=sims)
+
+
 def test_gui_place_stones_and_draw():
-    app = GomokuApp()
+    app = _make()
     try:
         _click(app, 7, 7)
         _click(app, 7, 8)
@@ -29,7 +33,7 @@ def test_gui_place_stones_and_draw():
 
 
 def test_gui_win_message_and_restart():
-    app = GomokuApp()
+    app = _make()
     try:
         # 黑连五：(7,5)..(7,9)，白隔开应一手
         for r, c in [(7, 5), (8, 0), (7, 6), (8, 1), (7, 7), (8, 2), (7, 8), (8, 3), (7, 9)]:
@@ -47,12 +51,28 @@ def test_gui_win_message_and_restart():
 
 
 def test_gui_undo():
-    app = GomokuApp()
+    app = _make()
     try:
         _click(app, 7, 7)
         _click(app, 7, 8)
         app.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_u))
         assert app.board.move_count == 1
         assert app.board.to_play == gui.WHITE
+    finally:
+        pygame.quit()
+
+
+def test_gui_menu_navigation():
+    app = GomokuApp()  # 默认进主菜单
+    try:
+        assert app.screen_state == "menu"
+        # 按键 2 → 人 vs AI（人执黑 = AI 执白）
+        app.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_2))
+        assert app.screen_state == "game"
+        assert app.mode == "pvc"
+        assert app.ai_player == gui.WHITE
+        # ESC 回菜单
+        app.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_ESCAPE))
+        assert app.screen_state == "menu"
     finally:
         pygame.quit()
