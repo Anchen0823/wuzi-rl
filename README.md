@@ -6,14 +6,15 @@
 
 ## 当前状态
 
-**M1 —— 完成**（环境 + 规则引擎 + 界面 + 审计；24 项测试全绿，CUDA 冒烟通过）
+**M2 —— 完成**（纯 MCTS 基线 + GUI 模式接入；39 项测试全绿）
 
 - [x] M0 计划书与系统设计、仓库初始化
 - [x] M1 环境搭建（`.venv` + pygame-ce/NumPy/PyTorch 2.13.0+cu126，CUDA 冒烟通过）
 - [x] M1 规则引擎 `gomoku/board.py` + 对局管理 `gomoku/game.py`（含单测）
-- [x] M1 pygame 界面 `gomoku/gui.py`（人 vs 人，含冒烟测试；人工体验验收待 M4 前）
+- [x] M1 pygame 界面 `gomoku/gui.py`（人 vs 人，含冒烟测试）
 - [x] M1 依赖白名单审计 `tools/dep_audit.py`
-- [ ] M2 纯 MCTS 基线 AI
+- [x] M2 纯 MCTS 基线 `ai/mcts.py` + 玩家引擎 `ai/players.py`（13 项单测）
+- [x] M2 GUI 模式接入（主菜单 1-4：人vs人 / 人执黑 / 人执白 / AI 观战）+ `tools/eval.py`
 - [ ] M3 神经网络 + 自对弈训练管线闭环
 - [ ] M4 强化训练 + AI 接入（难度档、人机对战）
 - [ ] M5 打磨、测试、打包
