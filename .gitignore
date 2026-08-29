@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.python-version
+
+# IDE / 编辑器
+.vscode/
+.idea/
+*.swp
+
+# 训练产物（数据、模型、日志不入库）
+checkpoints/
+data/
+logs/
+runs/
+*.npz
+*.pt
+*.pth
+
+# 系统
+.DS_Store
+Thumbs.db
