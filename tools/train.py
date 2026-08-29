@@ -112,7 +112,7 @@ def main(argv: list[str] | None = None) -> int:
         # 定期对战基线，观察学习曲线（vs 贪心更能反映棋力成长）
         if args.eval_baseline_every > 0 and (it + 1) % args.eval_baseline_every == 0:
             for name, fac in (("random", RandomPlayer), ("greedy", GreedyPlayer)):
-                st = evaluate_vs_player(net, fac, 4, min(cfg.sims_eval, 100), device, seed=1)
+                st = evaluate_vs_player(net, fac, 4, min(cfg.sims_eval, 300), device, seed=1)
                 row[f"vs_{name}"] = f"{st.get('net', 0)}-{st.get('player', 0)}"
                 print(f"  [基线] vs {name}: {st}")
         append_history(args.history, row)
