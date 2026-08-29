@@ -93,7 +93,7 @@ class Board:
   - `6` AI vs AI 观战：网络 + PUCT 400。
   - 网络引擎：启动时从 `checkpoints/net.pt` 加载（架构从 state_dict 推断），缺失时网络档自动回退纯 MCTS 并提示。
   - 对局内：R 重开、U 悔棋（人机模式下悔棋仅限人类行棋时）。
-  - 回放：待 M5 完善（读取对局记录逐步重放）。
+  - **对局回放（M5）**：对局结束自动保存记录（`runs/games/*.json`，`Game.save/load_record`）；主菜单 `7` 进入回放，空格/退格步进、ESC 返回；绘制复用 `_draw_board_state`。
 - **线程模型**（已实现）：主线程渲染与事件；AI 推理在后台线程执行（`threading.Thread` + `queue.Queue` 回传着法），对局中显示“AI 思考中…”，禁止 UI 卡顿。
 - **落子反馈**：上一步高亮；胜利时连线五子高亮。
 
