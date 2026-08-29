@@ -1,8 +1,8 @@
-"""命令行对战评估：随机 / 贪心 / 纯 MCTS 两两对战（换边双局制）。
+"""命令行对战评估：随机 / 贪心 / 纯 MCTS / 网络引擎两两对战（换边双局制）。
 
 用法：
     python tools/eval.py --games 20 --sims 200 --p1 mcts --p2 greedy
-    python tools/eval.py --games 10 --p1 greedy --p2 random
+    python tools/eval.py --games 10 --sims 400 --p1 net --p2 greedy   # 网络引擎（加载 checkpoints/net.pt）
 """
 
 from __future__ import annotations
@@ -14,13 +14,23 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # 脚本直跑时保证包可导入
 
+import torch
+
 from gomoku.board import Board, BLACK, WHITE, DRAW
-from ai.players import RandomPlayer, GreedyPlayer, MCTSPlayer
+from ai.players import RandomPlayer, GreedyPlayer, MCTSPlayer, NetPlayer
+from ai.train import net_from_checkpoint
 
 FACTORIES = {
-    "random": lambda: RandomPlayer(),
-    "greedy": lambda: GreedyPlayer(),
+    "random": lambda sims: RandomPlayer(),
+    "greedy": lambda sims: GreedyPlayer(),
     "mcts": lambda sims: MCTSPlayer(sims=sims, seed=0),
+    "net": lambda sims: NetPlayer(
+        net_from_checkpoint(
+            "checkpoints/net.pt",
+            torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+        ),
+        sims=sims, seed=0,
+    ),
 }
 
 
@@ -41,8 +51,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--p2", choices=list(FACTORIES), default="greedy")
     args = ap.parse_args(argv)
 
-    p1 = FACTORIES[args.p1](args.sims) if args.p1 == "mcts" else FACTORIES[args.p1]()
-    p2 = FACTORIES[args.p2](args.sims) if args.p2 == "mcts" else FACTORIES[args.p2]()
+    p1 = FACTORIES[args.p1](args.sims)
+    p2 = FACTORIES[args.p2](args.sims)
 
     p1_wins = p2_wins = draws = 0
     for i in range(args.games):

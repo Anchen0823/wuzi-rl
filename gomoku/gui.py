@@ -8,8 +8,10 @@
 
 from __future__ import annotations
 
+import json
 import queue
 import threading
+from pathlib import Path
 
 import pygame
 import torch
@@ -18,6 +20,7 @@ from ai.net import GomokuNet
 from ai.players import MCTSPlayer, NetPlayer
 from ai.train import net_from_checkpoint
 from .board import Board, BLACK, WHITE, ONGOING, BLACK_WIN, WHITE_WIN, DRAW
+from .game import Game
 
 CELL = 40                 # 网格间距（像素）
 MARGIN = 40               # 棋盘边距
@@ -35,6 +38,7 @@ COLORS = {
 }
 NAME = {BLACK: "黑方", WHITE: "白方"}
 DEFAULT_CHECKPOINT = "checkpoints/net.pt"
+GAME_DIR = "runs/games"   # 对局记录（回放数据源）
 
 # 主菜单：按键 → (模式, AI 执子, 引擎, 模拟数, 说明)
 # pvc 中 ai_player 为 AI 执子颜色；engine: mcts=纯 MCTS, net=网络+PUCT。
@@ -55,6 +59,7 @@ MENU_LINES = (
     "4  人 vs AI·高（网络 800 模拟）",
     "5  人执白 vs AI·高（网络 800 模拟）",
     "6  AI vs AI 观战（网络 400 模拟）",
+    "7  回放上一局（空格/退格步进）",
     "",
     "ESC  退出",
 )
@@ -99,6 +104,12 @@ class GomokuApp:
         self.ai_sims: int = sims
         self._ai_thread: threading.Thread | None = None
         self._ai_result: "queue.Queue[int]" = queue.Queue()
+        # 回放状态
+        self.replay_board: Board | None = None
+        self.replay_moves: list[int] = []
+        self.replay_idx = 0
+        self.replay_result: int | None = None
+        self.replay_record: dict = {}
         if mode is not None:
             self._enter_mode(mode, ai_player, engine, sims)
 
@@ -117,17 +128,50 @@ class GomokuApp:
         self._win_line = None
         self.message = "黑方先手"
 
+    # ---------- 回放 ----------
+    def _enter_replay(self) -> None:
+        """加载最新一局记录并进入回放（空格=下一步，退格=上一步）。"""
+        files = sorted(Path(GAME_DIR).glob("game_*.json"))
+        if not files:
+            self.screen_state = "menu"
+            return
+        self.replay_record = Game.load_record(str(files[-1]))
+        self.replay_board = Board(self.replay_record.get("size", self.size))
+        self.replay_moves = list(self.replay_record.get("moves", []))
+        self.replay_idx = 0
+        self.replay_result = self.replay_record.get("result")
+        self.screen_state = "replay"
+
+    def _replay_step(self, delta: int) -> None:
+        """步进回放；delta=±1。进入终局时显示胜负。"""
+        assert self.replay_board is not None
+        n = len(self.replay_moves)
+        self.replay_idx = max(0, min(n, self.replay_idx + delta))
+        self.replay_board.reset()
+        for mv in self.replay_moves[: self.replay_idx]:
+            self.replay_board.apply(mv)
+
     # ---------- 事件 ----------
     def handle_event(self, event: pygame.event.Event) -> None:
         if event.type == pygame.QUIT:
             pygame.quit()
             raise SystemExit
         if event.type == pygame.KEYDOWN:
+            if self.screen_state == "replay":
+                if event.key == pygame.K_ESCAPE:
+                    self.screen_state = "menu"
+                elif event.key == pygame.K_SPACE:
+                    self._replay_step(+1)
+                elif event.key == pygame.K_BACKSPACE:
+                    self._replay_step(-1)
+                return
             if self.screen_state == "menu":
                 if event.key == pygame.K_ESCAPE:
                     pygame.quit()
                     raise SystemExit
-                if event.key in MODES:
+                if event.key == pygame.K_7:
+                    self._enter_replay()
+                elif event.key in MODES:
                     m, ai, eng, sims, _ = MODES[event.key]
                     self._enter_mode(m, ai, eng, sims)
                 return
@@ -182,6 +226,17 @@ class GomokuApp:
         else:
             self._win_line = None
             self.message = "和棋（棋盘已满）"
+        self._save_record()
+
+    def _save_record(self) -> None:
+        """对局结束自动保存记录（回放数据源）。"""
+        import time
+
+        Path(GAME_DIR).mkdir(parents=True, exist_ok=True)
+        path = Path(GAME_DIR) / f"game_{time.strftime('%Y%m%d_%H%M%S')}.json"
+        Game.save_game(Game.from_record({
+            "size": self.size, "moves": self.board.history, "result": self.board.winner,
+        }), str(path))
 
     def _find_win_line(self, player: int) -> list[tuple[int, int]] | None:
         """找出包含上一手的连五（任意 ≥5 连续同色）。"""
@@ -256,13 +311,9 @@ class GomokuApp:
         self._apply(move)
 
     # ---------- 渲染 ----------
-    def draw(self) -> None:
-        if self.screen_state == "menu":
-            self._draw_menu()
-            return
-        screen = self.screen
+    def _draw_board_state(self, screen, board: Board, win_line, message: str) -> None:
+        """绘制棋盘 + 状态栏（对局与回放共用）。"""
         screen.fill(COLORS["panel"])
-
         # 棋盘底
         edge = self.board_size - 2 * MARGIN + 40
         pygame.draw.rect(screen, COLORS["bg"], (MARGIN - 20, MARGIN - 20, edge, edge))
@@ -278,7 +329,7 @@ class GomokuApp:
         # 棋子
         for r in range(self.size):
             for c in range(self.size):
-                v = int(self.board.stones[r, c])
+                v = int(board.stones[r, c])
                 if v == 0:
                     continue
                 cx, cy = MARGIN + c * CELL, MARGIN + r * CELL
@@ -286,18 +337,58 @@ class GomokuApp:
                 pygame.draw.circle(screen, color, (cx, cy), CELL // 2 - 3)
                 pygame.draw.circle(screen, COLORS["line"], (cx, cy), CELL // 2 - 3, 1)
         # 上一手标记
-        if self.board.last_move is not None:
-            r, c = self.board.rc(self.board.last_move)
+        if board.last_move is not None:
+            r, c = board.rc(board.last_move)
             cx, cy = MARGIN + c * CELL, MARGIN + r * CELL
             pygame.draw.circle(screen, COLORS["last"], (cx, cy), 5)
         # 胜利连线
-        if self._win_line:
-            pts = [(MARGIN + c * CELL, MARGIN + r * CELL) for r, c in self._win_line]
+        if win_line:
+            pts = [(MARGIN + c * CELL, MARGIN + r * CELL) for r, c in win_line]
             pygame.draw.lines(screen, COLORS["last"], False, pts, 4)
         # 状态栏
-        text = self.font.render(self.message, True, COLORS["text"])
+        text = self.font.render(message, True, COLORS["text"])
         screen.blit(text, (MARGIN, self.board_size + 15))
         pygame.display.flip()
+
+    def draw(self) -> None:
+        if self.screen_state == "menu":
+            self._draw_menu()
+        elif self.screen_state == "replay":
+            self._draw_replay()
+        else:
+            self._draw_board_state(self.screen, self.board, self._win_line, self.message)
+
+    def _draw_replay(self) -> None:
+        board = self.replay_board or Board(self.size)
+        if self.replay_idx >= len(self.replay_moves) and self.replay_result is not None:
+            if self.replay_result == BLACK_WIN:
+                msg = f"回放 {self.replay_idx}/{len(self.replay_moves)} 手 · 黑方胜"
+            elif self.replay_result == WHITE_WIN:
+                msg = f"回放 {self.replay_idx}/{len(self.replay_moves)} 手 · 白方胜"
+            else:
+                msg = f"回放 {self.replay_idx}/{len(self.replay_moves)} 手 · 和棋"
+        else:
+            msg = f"回放 {self.replay_idx}/{len(self.replay_moves)} 手（空格/退格步进，ESC 返回）"
+        win_line = self._find_win_line_for(board)
+        self._draw_board_state(self.screen, board, win_line, msg)
+
+    def _find_win_line_for(self, board: Board) -> list[tuple[int, int]] | None:
+        """回放用：任意 ≥5 连子的首段（简单查找）。"""
+        for r in range(self.size):
+            for c in range(self.size):
+                v = int(board.stones[r, c])
+                if v == 0:
+                    continue
+                for dr, dc in ((1, 0), (0, 1), (1, 1), (1, -1)):
+                    cells = []
+                    rr, cc = r, c
+                    while board.in_bounds(rr, cc) and board.stones[rr, cc] == v:
+                        cells.append((rr, cc))
+                        rr += dr
+                        cc += dc
+                    if len(cells) >= 5:
+                        return cells
+        return None
 
     def _draw_menu(self) -> None:
         screen = self.screen

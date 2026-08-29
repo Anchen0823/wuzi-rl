@@ -57,6 +57,11 @@ class Board:
         return self._last_move
 
     @property
+    def history(self) -> list[int]:
+        """已落子序列（副本）。"""
+        return list(self._history)
+
+    @property
     def winner(self) -> int | None:
         return self._winner
 

@@ -59,3 +59,24 @@ class Game:
         for move in record["moves"]:
             g.play(move)
         return g
+
+    # ---------- 记录存取（JSON） ----------
+    @staticmethod
+    def save_record(record: dict, path: str) -> None:
+        import json
+        from pathlib import Path
+
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(record, f, ensure_ascii=False, indent=1)
+
+    @staticmethod
+    def load_record(path: str) -> dict:
+        import json
+
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+    @staticmethod
+    def save_game(game: "Game", path: str) -> None:
+        Game.save_record(game.to_record(), path)
