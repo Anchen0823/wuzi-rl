@@ -107,6 +107,8 @@ class NetPlayer:
         self.rng = random.Random(seed)
 
     def move(self, board: Board) -> int:
+        if board.move_count == 0:
+            return board.idx(board.size // 2, board.size // 2)  # 空盘首选天元
         from .mcts import puct_best_move
 
         return puct_best_move(board, self.net, self.sims, self.c_puct,
