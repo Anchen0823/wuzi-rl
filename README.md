@@ -6,10 +6,12 @@
 
 ## 当前状态
 
-**M0 —— 规划完成**（游戏与 AI 尚未实现，按里程碑推进）
+**M1 —— 规则引擎与界面实现中**（测试验证完成后标记完成）
 
 - [x] M0 计划书与系统设计、仓库初始化
-- [ ] M1 环境搭建 + 规则引擎 + pygame 界面（人 vs 人）
+- [x] M1 环境搭建（`.venv` + pygame/NumPy/PyTorch-CUDA）
+- [x] M1 规则引擎 `gomoku/board.py` + 对局管理 `gomoku/game.py`（含单测）
+- [ ] M1 pygame 界面（已实现，人工验收中）
 - [ ] M2 纯 MCTS 基线 AI
 - [ ] M3 神经网络 + 自对弈训练管线闭环
 - [ ] M4 强化训练 + AI 接入（难度档、人机对战）
@@ -25,12 +27,36 @@
 ## 环境
 
 - Python 3.14+（个别 wheel 不兼容时回退 3.12/3.13 venv）
-- NVIDIA RTX 4060（8GB）+ CUDA；pygame + NumPy + PyTorch（CUDA 版）
+- NVIDIA RTX 4060（8GB）+ CUDA；pygame-ce（import 名 pygame）+ NumPy + PyTorch（CUDA 版）
 - 依赖：`pip install -r requirements.txt`（PyTorch 安装命令以官方 Get Started 页面为准）
 
 ## 快速开始
 
-> 待 M1 完成后提供（安装 → 启动游戏 → 人机对战）。
+```powershell
+# 1. 创建虚拟环境并安装依赖（PyTorch 用 CUDA 版 wheel）
+python -m venv .venv
+.\.venv\Scripts\python -m pip install pygame-ce numpy pytest
+.\.venv\Scripts\python -m pip install torch --index-url https://download.pytorch.org/whl/cu126
+# 国内网络慢可改用 PyPI 镜像（阿里云），其 torch 同样自带 CUDA 运行时：
+#   $env:PIP_INDEX_URL = "https://mirrors.aliyun.com/pypi/simple/"
+#
+# 注意：若国内镜像缺 Python 3.14 的 CUDA wheel 且官方源直连过慢，
+# 可对官方 wheel 做并行分段下载（curl -r Range + 合并），
+# 本项目 M1 实测：单连接约 0.2 MB/s，12 路并行约 2 MB/s。
+
+# 2. 运行测试
+.\.venv\Scripts\python -m pytest tests -q
+
+# 3. 启动游戏（人 vs 人；R 重开 / U 悔棋）
+.\.venv\Scripts\python main.py
+```
+
+## 自研边界审计
+
+```powershell
+python tools\dep_audit.py            # 检查源码 import 与权重文件
+python tools\dep_audit.py --check-installed   # 连同已装 pip 包一起审计
+```
 
 ## 许可证
 

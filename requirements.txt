@@ -2,10 +2,15 @@
 # wuzi-rl 依赖白名单
 # 自研项目：仅基础工具，不含任何 AI 模型 / 预训练权重 / AI 组件。
 # PyTorch 仅作为 GPU 张量计算与自动微分引擎使用（见 docs/PLAN.md §1.2）。
-# PyTorch 需安装对应 CUDA 的官方版本，安装命令以
-#   https://pytorch.org/get-started/locally/ 为准。
+#
+# - pygame-ce：经典 pygame 的社区维护版（import 名仍是 pygame），
+#   提供 Python 3.14 的 cp314 wheel；经典 pygame 已停更、无 3.14 wheel。
+# - torch：需安装对应 CUDA 的版本：
+#     pip install torch --index-url https://download.pytorch.org/whl/cu126
+#   国内网络慢可改用 PyPI 镜像（其 torch wheel 同样自带 CUDA 运行时）：
+#     $env:PIP_INDEX_URL = "https://mirrors.aliyun.com/pypi/simple/"
 # ============================================================
 
-pygame>=2.6
+pygame-ce>=2.5.8
 numpy>=2.0
 torch>=2.9
