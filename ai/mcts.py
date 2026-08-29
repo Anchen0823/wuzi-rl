@@ -16,6 +16,7 @@ import random
 from dataclasses import dataclass, field
 
 import numpy as np
+import torch
 
 from gomoku.board import Board, BLACK, WHITE, EMPTY, DRAW
 
@@ -194,3 +195,199 @@ def best_move(board: Board, sims: int, c: float = 1.4, rng: random.Random | None
         moves = board.legal_moves()
         return moves[0] if moves else -1
     return max(root.children.items(), key=lambda kv: (kv[1].n, kv[1].q))[0]
+
+
+# ============================================================
+# 网络化 PUCT 搜索（AlphaZero 风格，见 DESIGN.md §7.2）
+# ============================================================
+
+
+@dataclass
+class PuctNode:
+    """PUCT 树节点。w 与 q 为「本节点轮到的玩家」视角；p 为父视角先验。"""
+
+    move: int | None = None
+    parent: "PuctNode | None" = None
+    n: int = 0
+    w: float = 0.0
+    p: float = 0.0
+    children: dict[int, "PuctNode"] = field(default_factory=dict)
+    virtual_loss: int = 0
+
+    @property
+    def q(self) -> float:
+        """虚拟损失计入价值（n=0 且挂起评估时视为输）。"""
+        return (self.w - self.virtual_loss) / max(self.n, 1)
+
+
+def _puct_score(child: PuctNode, parent_n: int, c_puct: float) -> float:
+    q = (child.w - child.virtual_loss) / max(child.n, 1)
+    u = c_puct * child.p * math.sqrt(parent_n + 1.0) / (1.0 + child.n)
+    return q + u
+
+
+def _to_tensor(board: Board, device: torch.device) -> torch.Tensor:
+    return torch.from_numpy(board.encode()).unsqueeze(0).to(device)
+
+
+def _evaluate(board: Board, net, device: torch.device) -> tuple[np.ndarray, float]:
+    """单局面评估：返回 (合法掩码后的策略分布 (225,), 价值标量)。"""
+    legal = board.legal_moves()
+    mask = np.zeros(board.size * board.size, dtype=np.float32)
+    mask[legal] = 1.0
+    with torch.no_grad():
+        p, v = net.forward_masked(_to_tensor(board, device),
+                                  torch.from_numpy(mask).unsqueeze(0).to(device))
+    return p.cpu().numpy()[0], float(v.item())
+
+
+def _evaluate_batch(boards: list[Board], net, device: torch.device):
+    """批量叶子评估：一次 GPU 前向处理整批局面。"""
+    xs = torch.stack([torch.from_numpy(b.encode()) for b in boards]).to(device)
+    masks = np.zeros((len(boards), boards[0].size * boards[0].size), dtype=np.float32)
+    for i, b in enumerate(boards):
+        masks[i, b.legal_moves()] = 1.0
+    with torch.no_grad():
+        ps, vs = net.forward_masked(xs, torch.from_numpy(masks).to(device))
+    return ps.cpu().numpy(), vs.cpu().numpy().reshape(-1)
+
+
+def _terminal_value(board: Board) -> float:
+    """终局价值（终局时轮到者视角）：胜 +1 / 负 -1 / 和 0。"""
+    w = board.winner
+    if w == DRAW:
+        return 0.0
+    return 1.0 if w == board.to_play else -1.0
+
+
+def _puct_select(node: PuctNode, c_puct: float) -> int:
+    best, best_score = None, -float("inf")
+    for move, child in node.children.items():
+        s = _puct_score(child, node.n, c_puct)
+        if s > best_score:
+            best, best_score = move, s
+    assert best is not None
+    return best
+
+
+def _select(root: PuctNode, board: Board, c_puct: float):
+    """从根下探到叶子。返回 (叶节点, 路径[根→叶], 叶局面副本)。"""
+    b = board.copy()
+    node = root
+    path = [root]
+    while node.children:
+        mv = _puct_select(node, c_puct)
+        b.apply(mv)
+        node = node.children[mv]
+        path.append(node)
+    return node, path, b
+
+
+def _expand(node: PuctNode, board: Board, priors: np.ndarray) -> None:
+    for m in board.legal_moves():
+        node.children[m] = PuctNode(move=m, parent=node, p=float(priors[m]))
+
+
+def _backup(path: list[PuctNode], value: float) -> None:
+    """沿路径回传（价值按玩家视角逐层翻转）。"""
+    v = value
+    for node in reversed(path):
+        node.n += 1
+        node.w += v
+        v = -v
+
+
+def puct_search(
+    board: Board,
+    net,
+    sims: int,
+    c_puct: float = 1.5,
+    dirichlet_alpha: float = 0.3,
+    dirichlet_eps: float = 0.25,
+    add_root_noise: bool = True,
+    batch_size: int = 64,
+    device: torch.device | None = None,
+    rng: random.Random | None = None,
+) -> PuctNode:
+    """网络化 PUCT 搜索（批量叶子评估 + 虚拟损失）。
+
+    - 根节点先验 = 网络策略 + Dirichlet 噪声（α=0.3，ε=0.25，可关）
+    - 每轮选叶：Q + c_puct·P·√N/(1+n)，挂起叶子加虚拟损失防重复
+    - 叶子评估：同批攒满 batch_size 后统一 GPU 前向
+    - 终局叶子直接以真实胜负回传，不评估
+    """
+    rng = rng or random.Random()
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    net.eval()
+    root = PuctNode()
+    legal = board.legal_moves()
+    with torch.no_grad():
+        priors, _ = _evaluate(board, net, device)
+    noise = None
+    if add_root_noise:
+        np_rng = np.random.default_rng(rng.randrange(1 << 30))
+        noise = np_rng.dirichlet([dirichlet_alpha] * len(legal))
+    for k, m in enumerate(legal):
+        p = float(priors[m])
+        if noise is not None:
+            p = (1.0 - dirichlet_eps) * p + dirichlet_eps * float(noise[k])
+        root.children[m] = PuctNode(move=m, parent=root, p=p)
+
+    done = 0
+    with torch.no_grad():
+        while done < sims:
+            batch: list[tuple[PuctNode, list[PuctNode], Board]] = []
+            for _ in range(min(batch_size, sims - done)):
+                leaf, path, leaf_board = _select(root, board, c_puct)
+                if leaf_board.is_over:
+                    _backup(path, _terminal_value(leaf_board))
+                else:
+                    leaf.virtual_loss += 1
+                    batch.append((leaf, path, leaf_board))
+                done += 1
+            if batch:
+                ps, vs = _evaluate_batch([b for _, _, b in batch], net, device)
+                for (leaf, path, leaf_board), p_i, v_i in zip(batch, ps, vs):
+                    _expand(leaf, leaf_board, p_i)
+                    _backup(path, v_i)
+    return root
+
+
+def puct_visit_distribution(root: PuctNode, temp: float = 1.0, board_size: int = 15) -> np.ndarray:
+    """根节点访问分布 π（225 向量）。temp ≤ 0 → one-hot（访问最多者）。"""
+    pi = np.zeros(board_size * board_size, dtype=np.float32)
+    if not root.children:
+        return pi
+    if temp <= 0:
+        mv = max(root.children, key=lambda m: root.children[m].n)
+        pi[mv] = 1.0
+        return pi
+    for m, ch in root.children.items():
+        pi[m] = ch.n ** (1.0 / temp)
+    s = pi.sum()
+    return pi / s if s > 0 else pi
+
+
+def puct_best_move(
+    board: Board,
+    net,
+    sims: int,
+    c_puct: float = 1.5,
+    device: torch.device | None = None,
+    rng: random.Random | None = None,
+) -> int:
+    """网络化最优着法：强制着（成五/堵五）优先，否则 PUCT 搜索取访问最多者。"""
+    me = board.to_play
+    opp = WHITE if me == BLACK else BLACK
+    for m in board.legal_moves():
+        if would_win(board, m, me):
+            return m
+    for m in board.legal_moves():
+        if would_win(board, m, opp):
+            return m
+    root = puct_search(board, net, sims, c_puct=c_puct, rng=rng, device=device)
+    if not root.children:
+        moves = board.legal_moves()
+        return moves[0] if moves else -1
+    return max(root.children, key=lambda m: root.children[m].n)
