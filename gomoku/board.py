@@ -131,6 +131,17 @@ class Board:
         self._to_play = BLACK if self._move_count % 2 == 0 else WHITE
         return move
 
+    def copy(self) -> "Board":
+        """深拷贝（AI 后台线程推理等并发场景使用）。"""
+        b = Board(self.size)
+        b._stones = self._stones.copy()
+        b._to_play = self._to_play
+        b._move_count = self._move_count
+        b._history = list(self._history)
+        b._last_move = self._last_move
+        b._winner = self._winner
+        return b
+
     # ---------- 状态编码（当前玩家视角，见 DESIGN.md §5） ----------
     def encode(self, player: int | None = None) -> np.ndarray:
         """编码为 (4, size, size) float32 张量。player=视角玩家，默认轮到者。"""

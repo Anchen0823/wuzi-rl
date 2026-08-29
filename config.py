@@ -17,8 +17,10 @@ class Config:
     n_res_blocks: int = 6
     n_filters: int = 256
 
-    # ---- MCTS / PUCT（M2/M3 使用） ----
+    # ---- MCTS / PUCT（M2 纯 MCTS 基线 / M3 网络化搜索） ----
     c_puct: float = 1.5
+    c_ucb: float = 1.4          # 纯 MCTS 基线 UCB1 系数
+    mcts_sims_menu: int = 200   # GUI 低难度档模拟次数
     sims_train: int = 200
     sims_eval: int = 800
     dirichlet_alpha: float = 0.3
