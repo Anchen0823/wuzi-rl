@@ -6,7 +6,7 @@
 
 ## 当前状态
 
-**M2 —— 完成**（纯 MCTS 基线 + GUI 模式接入；39 项测试全绿）
+**M3 —— 完成**（自研神经网络 + 自对弈训练管线闭环；53 项测试全绿）
 
 - [x] M0 计划书与系统设计、仓库初始化
 - [x] M1 环境搭建（`.venv` + pygame-ce/NumPy/PyTorch 2.13.0+cu126，CUDA 冒烟通过）
@@ -15,7 +15,9 @@
 - [x] M1 依赖白名单审计 `tools/dep_audit.py`
 - [x] M2 纯 MCTS 基线 `ai/mcts.py` + 玩家引擎 `ai/players.py`（13 项单测）
 - [x] M2 GUI 模式接入（主菜单 1-4：人vs人 / 人执黑 / 人执白 / AI 观战）+ `tools/eval.py`
-- [ ] M3 神经网络 + 自对弈训练管线闭环
+- [x] M3 自研残差网络 `ai/net.py`（7.26M 参数，手写卷积/BN/全连接层）
+- [x] M3 网络化 PUCT 搜索（批量叶子评估 + 虚拟损失 + Dirichlet 噪声）
+- [x] M3 训练管线：`ai/selfplay.py` + `ai/replay.py` + `ai/train.py` + `ai/arena.py` + `tools/train.py`
 - [ ] M4 强化训练 + AI 接入（难度档、人机对战）
 - [ ] M5 打磨、测试、打包
 
@@ -59,6 +61,22 @@ python -m venv .venv
 python tools\dep_audit.py            # 检查源码 import 与权重文件
 python tools\dep_audit.py --check-installed   # 连同已装 pip 包一起审计
 ```
+
+## 训练 AI（M3 起可用）
+
+```powershell
+# 冒烟（小规模跑通全流程）
+.\.venv\Scripts\python tools\train.py --iters 2 --games-per-iter 2 --sims-train 40 `
+    --arena-games 2 --sims-eval 40 --n-blocks 2 --n-filters 64
+
+# 正式训练（默认配置：500 局/迭代、sims 200/800、评估门 200 局；4060 挂机）
+.\.venv\Scripts\python tools\train.py --iters 50
+
+# 中断后续训
+.\.venv\Scripts\python tools\train.py --iters 50 --checkpoint checkpoints\net.pt
+```
+
+产物：`checkpoints/net.pt`（模型+优化器+迭代元数据）、`runs/history.csv`（损失/采纳/耗时曲线）。
 
 ## 许可证
 
