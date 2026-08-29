@@ -18,7 +18,32 @@ import re
 import sys
 
 # 允许的基础工具（通用计算/图形，非 AI 组件）
-ALLOWLIST = {"pygame", "pygame-ce", "numpy", "torch", "pytest", "pip", "setuptools", "wheel"}
+# 含 torch/pytest 的通用传递依赖（filelock、sympy、jinja2 等均为通用库）。
+ALLOWLIST = {
+    # 项目直接依赖
+    "pygame",
+    "pygame-ce",
+    "numpy",
+    "torch",
+    "pytest",
+    "pip",
+    "setuptools",
+    "wheel",
+    # 通用传递依赖
+    "colorama",
+    "filelock",
+    "fsspec",
+    "iniconfig",
+    "jinja2",
+    "markupsafe",
+    "mpmath",
+    "networkx",
+    "packaging",
+    "pluggy",
+    "pygments",
+    "sympy",
+    "typing_extensions",
+}
 
 # 禁用：任何 AI 模型 / RL / 组件库
 FORBIDDEN_IMPORTS = (
