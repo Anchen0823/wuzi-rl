@@ -35,9 +35,10 @@
 | GPU | NVIDIA GeForce RTX 4060 Laptop GPU，8188 MiB | 训练主算力 |
 | 驱动 | 610.88 | 满足 CUDA 12/13 运行时要求 |
 | CUDA 工具链 | nvcc release 13.3 | 已安装（v1 使用 PyTorch 自带 CUDA 运行时） |
-| Python | 3.14.7 | 较新，需验证第三方 wheel 支持 |
-| pygame / NumPy | 未安装 | M1 安装 |
-| PyTorch | 未安装 | M1 按 CUDA 匹配安装 |
+| Python | 3.14.7（另有 3.12 可回退） | wheel 兼容性已在 M1 确认（torch cp314 可用） |
+| 虚拟环境 | `.venv`（Python 3.14） | M1 创建；依赖安装见下方 |
+| pygame / NumPy | M1 已安装于 `.venv` | 版本以 `pip freeze` 为准 |
+| PyTorch | 2.13.0+cu126（CUDA 版） | 通过 `--index-url https://download.pytorch.org/whl/cu126` 安装 |
 | git | 2.49.0，身份已配置 | 就绪 |
 | GitHub CLI | 2.92.0，已登录 Anchen0823（repo 权限） | 远端操作就绪 |
 
@@ -46,7 +47,7 @@
 | 组件 | 选型 | 用途 | 边界 |
 |---|---|---|---|
 | 语言 | Python 3.14（wheel 不兼容时回退 3.12/3.13 venv） | 全项目 | 基础 |
-| 图形 | pygame ≥ 2.6 | 棋盘渲染、事件、交互 | 基础 |
+| 图形 | pygame-ce ≥ 2.5.8（import 名 pygame） | 棋盘渲染、事件、交互 | 基础 |
 | 数值 | NumPy ≥ 2.0 | 棋盘编码、增强、MCTS 内数据结构 | 基础 |
 | 深度学习引擎 | PyTorch ≥ 2.9（CUDA 版） | 张量运算、自动微分、GPU 调度 | 基础设施 |
 | 训练循环 | 自研（基于 torch 基础张量操作） | 损失/优化/评估门 | 自研 |
@@ -91,8 +92,8 @@ MCTS(当前最佳) ──对局──► (s, π, z) ──► 经验池(最近N�
 
 | 阶段 | 内容 | 交付物 | 验收标准 | 预估工时 |
 |---|---|---|---|---|
-| **M0** | 文档与仓库 | 计划书、设计文档、GitHub 仓库 | 文档完整、远端推送成功 | ✅ 本轮 |
-| **M1** | 环境 + 规则引擎 + 界面 | 依赖安装与 CUDA 冒烟；`board.py` 全实现 + 单测；pygame 界面 | GPU 冒烟通过；单测全绿；人vs人完整下一局（含胜负判定/悔棋） | 1–2 天 |
+| **M0** | 文档与仓库 | 计划书、设计文档、GitHub 仓库 | 文档完整、远端推送成功 | ✅ 已完成 |
+| **M1** | 环境 + 规则引擎 + 界面 | 依赖安装与 CUDA 冒烟；`board.py` 全实现 + 单测；pygame 界面 | GPU 冒烟通过；单测全绿；人vs人完整下一局（含胜负判定/悔棋） | ✅ 完成（24 单测 + CUDA 冒烟通过；界面人工体验验收留待 M4 前） |
 | **M2** | 纯 MCTS 基线 AI | `mcts.py`（均匀先验 + 随机 rollout）；接入界面 | AI 单步 ≤ 2s，且能发现即刻连五/封堵 | 1–2 天 |
 | **M3** | 网络 + 训练管线闭环 | `net.py`；selfplay/train/arena；数据与 checkpoint 管理 | 完成一次完整迭代（自对弈→训练→评估），损失下降、无崩溃 | 3–5 天 |
 | **M4** | 强化训练 + 产品化接入 | 长时训练（GPU 挂机）；难度档；人机对战打磨 | 棋力验收达标（§7）；对局体验流畅 | 训练 3–7 天 GPU + 工程 2–3 天 |
@@ -132,9 +133,17 @@ MCTS(当前最佳) ──对局──► (s, π, z) ──► 经验池(最近N�
 | 五子棋先手（黑）优势影响训练 | 高 | 中 | 对称增强天然平衡黑白；评估强制换边；后续可选 Swap2 |
 | 训练周期超预期 | 中 | 中 | 目标分层：v1 先达“稳胜 MCTS 基线”，更强水平作为 v2 持续训练 |
 
-## 9. 下一步（M1 任务清单）
+## 9. M1 任务清单（已完成 ✅）
 
-1. 创建 venv 并安装 pygame / NumPy / PyTorch（CUDA 版），跑 GPU 冒烟测试。
-2. 实现 `gomoku/board.py` 规则引擎 + 完整单测（胜负、边界、满盘、对称变换）。
-3. 实现 pygame 界面：棋盘绘制、落子、胜负提示、悔棋、人vs人对局。
-4. 落地 `tools/dep_audit.py` 依赖白名单审计，锁死自研边界。
+1. ✅ 创建 venv（Python 3.14）并安装 pygame-ce / NumPy / PyTorch 2.13.0+cu126（CUDA 版）；GPU 冒烟测试通过（cuda_available=True，RTX 4060 矩阵运算正常）。
+   - 备注：经典 pygame 无 cp314 wheel → 改用 pygame-ce（import 名仍为 pygame）；
+     国内镜像缺 cp314 CUDA wheel 且官方直连慢（约 0.2 MB/s）→ 官方 wheel 12 路并行分段下载（约 2 MB/s）后本地安装。
+2. ✅ 实现 `gomoku/board.py` 规则引擎 + 完整单测（胜负、边界、满盘和棋、悔棋、编码、对称变换），21 项全绿。
+3. ✅ 实现 pygame 界面 `gomoku/gui.py`：棋盘绘制、落子、胜负提示、悔棋、人vs人对局；3 项 SDL dummy 冒烟测试全绿（人工体验验收留待 M4 前）。
+4. ✅ 落地 `tools/dep_audit.py` 依赖白名单审计，锁死自研边界（`--check-installed` 通过）。
+
+## 10. 下一步（M2 任务清单）
+
+1. 实现 `ai/mcts.py` 纯 MCTS 基线（均匀先验 + 快速 rollout + 即时胜负启发式），单测覆盖树统计一致性。
+2. 接入 GUI：人 vs AI（低难度档 = 纯 MCTS）。
+3. 与随机/贪心基线对战评估（tools/eval.py 雏形）。
