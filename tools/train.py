@@ -47,6 +47,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--n-filters", type=int, default=None)
     ap.add_argument("--batch-size", type=int, default=None)
     ap.add_argument("--lr", type=float, default=None)
+    ap.add_argument("--eval-baseline-every", type=int, default=0,
+                    help="每 N 迭代对战一次贪心/随机基线并记录（0=关闭）")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--checkpoint", default=None, help="续训：加载已有 checkpoint")
     ap.add_argument("--out", default="checkpoints/net.pt")
@@ -98,7 +100,7 @@ def main(argv: list[str] | None = None) -> int:
         if adopted:
             best_net.load_state_dict(net.state_dict())
         save_checkpoint(net, optimizer, args.out, {"iteration": it + 1})
-        append_history(args.history, {
+        row = {
             "iteration": it + 1,
             "loss": round(res["loss"], 4),
             "loss_pi": round(res["loss_pi"], 4),
@@ -106,7 +108,14 @@ def main(argv: list[str] | None = None) -> int:
             "buffer": res["buffer"],
             "adopted": adopted,
             "seconds": round(dt, 1),
-        })
+        }
+        # 定期对战基线，观察学习曲线（vs 贪心更能反映棋力成长）
+        if args.eval_baseline_every > 0 and (it + 1) % args.eval_baseline_every == 0:
+            for name, fac in (("random", RandomPlayer), ("greedy", GreedyPlayer)):
+                st = evaluate_vs_player(net, fac, 4, min(cfg.sims_eval, 100), device, seed=1)
+                row[f"vs_{name}"] = f"{st.get('net', 0)}-{st.get('player', 0)}"
+                print(f"  [基线] vs {name}: {st}")
+        append_history(args.history, row)
         print(f"迭代 {it + 1} 完成：loss={res['loss']:.4f} (pi={res['loss_pi']:.4f} v={res['loss_v']:.4f}) "
               f"耗时 {dt:.0f}s，checkpoint → {args.out}")
 

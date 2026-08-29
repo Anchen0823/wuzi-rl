@@ -6,6 +6,7 @@ L = (z − v)² − πᵀ log p + λ‖θ‖²；自对弈 → 训练 → 评估
 from __future__ import annotations
 
 import csv
+import math
 import random
 from pathlib import Path
 
@@ -75,7 +76,32 @@ def maybe_adopt(net, best_net, cfg, device, rng) -> bool:
 
 def save_checkpoint(net, optimizer, path, meta: dict | None = None) -> None:
     Path(path).parent.mkdir(parents=True, exist_ok=True)
-    torch.save({"model": net.state_dict(), "optimizer": optimizer.state_dict(), "meta": meta or {}}, path)
+    meta = dict(meta or {})
+    meta.setdefault("n_blocks", len(net.blocks))
+    meta.setdefault("n_filters", net.stem[0].weight.shape[0])
+    meta.setdefault("board_size", net.board_size)
+    torch.save({"model": net.state_dict(), "optimizer": optimizer.state_dict(), "meta": meta}, path)
+
+
+def net_from_checkpoint(path, device=None) -> "GomokuNet":
+    """从 checkpoint 重建网络：架构从 state_dict 推断（兼容无架构元数据的旧版）。"""
+    from .net import GomokuNet
+
+    ckpt = torch.load(path, map_location="cpu")
+    sd = ckpt["model"]
+    meta = ckpt.get("meta", {})
+    n_filters = int(meta.get("n_filters", sd["stem.0.weight"].shape[0]))
+    n_blocks = int(meta.get("n_blocks", 0))
+    if n_blocks == 0:  # 从 state_dict 推断
+        while f"blocks.{n_blocks}.conv1.weight" in sd:
+            n_blocks += 1
+    board_size = int(meta.get("board_size",
+                              int(math.sqrt(sd["policy_fc.weight"].shape[1] // 2))))
+    net = GomokuNet(board_size=board_size, n_blocks=n_blocks, n_filters=n_filters)
+    net.load_state_dict(sd)
+    if device is not None:
+        net = net.to(device)
+    return net
 
 
 def load_checkpoint(net, optimizer, path) -> dict:
