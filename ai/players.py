@@ -93,3 +93,21 @@ class MCTSPlayer:
         from .mcts import best_move
 
         return best_move(board, self.sims, self.c, self.rng)
+
+
+class NetPlayer:
+    """网络化引擎：神经网络 + PUCT 搜索（主力 AI，M4 起用于人机对战）。"""
+
+    def __init__(self, net, sims: int = 400, c_puct: float = 1.5,
+                 device=None, seed: int | None = None):
+        self.net = net
+        self.sims = sims
+        self.c_puct = c_puct
+        self.device = device
+        self.rng = random.Random(seed)
+
+    def move(self, board: Board) -> int:
+        from .mcts import puct_best_move
+
+        return puct_best_move(board, self.net, self.sims, self.c_puct,
+                              self.device, self.rng)

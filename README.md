@@ -6,19 +6,14 @@
 
 ## 当前状态
 
-**M3 —— 完成**（自研神经网络 + 自对弈训练管线闭环；53 项测试全绿）
+**M4 —— 进行中**（网络 AI 已接入 GUI；强化训练验证运行中）
 
 - [x] M0 计划书与系统设计、仓库初始化
-- [x] M1 环境搭建（`.venv` + pygame-ce/NumPy/PyTorch 2.13.0+cu126，CUDA 冒烟通过）
-- [x] M1 规则引擎 `gomoku/board.py` + 对局管理 `gomoku/game.py`（含单测）
-- [x] M1 pygame 界面 `gomoku/gui.py`（人 vs 人，含冒烟测试）
-- [x] M1 依赖白名单审计 `tools/dep_audit.py`
-- [x] M2 纯 MCTS 基线 `ai/mcts.py` + 玩家引擎 `ai/players.py`（13 项单测）
-- [x] M2 GUI 模式接入（主菜单 1-4：人vs人 / 人执黑 / 人执白 / AI 观战）+ `tools/eval.py`
-- [x] M3 自研残差网络 `ai/net.py`（7.26M 参数，手写卷积/BN/全连接层）
-- [x] M3 网络化 PUCT 搜索（批量叶子评估 + 虚拟损失 + Dirichlet 噪声）
-- [x] M3 训练管线：`ai/selfplay.py` + `ai/replay.py` + `ai/train.py` + `ai/arena.py` + `tools/train.py`
-- [ ] M4 强化训练 + AI 接入（难度档、人机对战）
+- [x] M1 环境搭建 + 规则引擎 + 界面 + 依赖审计
+- [x] M2 纯 MCTS 基线 + GUI 模式接入 + 对战评估
+- [x] M3 自研残差网络 + 网络化 PUCT + 自对弈训练管线（53→57 测试全绿）
+- [x] M4 网络引擎接入 GUI（主菜单 1-6 难度档，checkpoint 自动加载/回退）
+- [ ] M4 强化训练（验证运行中 → 长训挂机）+ 棋力验收
 - [ ] M5 打磨、测试、打包
 
 ## 文档
@@ -51,7 +46,7 @@ python -m venv .venv
 # 2. 运行测试
 .\.venv\Scripts\python -m pytest tests -q
 
-# 3. 启动游戏（人 vs 人；R 重开 / U 悔棋）
+# 3. 启动游戏（主菜单 1-6：人vs人 / 人vsAI 低-中-高 / AI观战）
 .\.venv\Scripts\python main.py
 ```
 
