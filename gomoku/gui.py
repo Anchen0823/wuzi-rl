@@ -1,7 +1,8 @@
-"""pygame 五子棋界面（M2：人vs人 / 人vsAI / AIvsAI 观战）。
+"""pygame 五子棋界面（M4：人vs人 / 人vsAI 三难度 / AIvsAI 观战）。
 
 完全自研：仅用 pygame 图形与事件 + 自研 AI 引擎（ai/players.py），
 无任何第三方 AI 组件。AI 推理在后台线程执行，不阻塞 UI。
+网络引擎从 checkpoints/net.pt 加载（缺失时自动回退纯 MCTS）。
 设计见 docs/DESIGN.md §4。
 """
 
@@ -11,8 +12,11 @@ import queue
 import threading
 
 import pygame
+import torch
 
-from ai.players import MCTSPlayer
+from ai.net import GomokuNet
+from ai.players import MCTSPlayer, NetPlayer
+from ai.train import net_from_checkpoint
 from .board import Board, BLACK, WHITE, ONGOING, BLACK_WIN, WHITE_WIN, DRAW
 
 CELL = 40                 # 网格间距（像素）
@@ -30,22 +34,27 @@ COLORS = {
     "last": (255, 80, 80),     # 上一手 / 胜利连线高亮
 }
 NAME = {BLACK: "黑方", WHITE: "白方"}
+DEFAULT_CHECKPOINT = "checkpoints/net.pt"
 
-# 主菜单：按键 → (模式, AI 执子, 说明)
-# 模式 pvc 中 ai_player 为 AI 执子颜色，人类执另一色；cvc 双方均为 AI。
+# 主菜单：按键 → (模式, AI 执子, 引擎, 模拟数, 说明)
+# pvc 中 ai_player 为 AI 执子颜色；engine: mcts=纯 MCTS, net=网络+PUCT。
 MODES = {
-    pygame.K_1: ("pvp", None, "人 vs 人"),
-    pygame.K_2: ("pvc", WHITE, "人 vs AI（人执黑）"),
-    pygame.K_3: ("pvc", BLACK, "人 vs AI（人执白）"),
-    pygame.K_4: ("cvc", None, "AI vs AI 观战"),
+    pygame.K_1: ("pvp", None, None, 0, "人 vs 人"),
+    pygame.K_2: ("pvc", WHITE, "mcts", 200, "人 vs AI·低（纯 MCTS 200）"),
+    pygame.K_3: ("pvc", WHITE, "net", 400, "人 vs AI·中（网络 400）"),
+    pygame.K_4: ("pvc", WHITE, "net", 800, "人 vs AI·高（网络 800）"),
+    pygame.K_5: ("pvc", BLACK, "net", 800, "人执白 vs AI·高（网络 800）"),
+    pygame.K_6: ("cvc", None, "net", 400, "AI vs AI 观战（网络 400）"),
 }
 MENU_LINES = (
     "五子棋 · 完全自研 AI",
     "",
     "1  人 vs 人",
-    "2  人 vs AI（人执黑）",
-    "3  人 vs AI（人执白）",
-    "4  AI vs AI 观战",
+    "2  人 vs AI·低（纯 MCTS 200 模拟）",
+    "3  人 vs AI·中（网络 400 模拟）",
+    "4  人 vs AI·高（网络 800 模拟）",
+    "5  人执白 vs AI·高（网络 800 模拟）",
+    "6  AI vs AI 观战（网络 400 模拟）",
     "",
     "ESC  退出",
 )
@@ -55,32 +64,51 @@ class GomokuApp:
     """五子棋应用：主菜单 + 对局（含 AI 后台线程）。"""
 
     def __init__(self, size: int = 15, mode: str | None = None, sims: int = 200,
-                 ai_player: int | None = None):
+                 ai_player: int | None = None, engine: str = "mcts", net=None):
         pygame.init()
-        pygame.display.set_caption("五子棋（M2）｜ 1-4 模式 · R 重开 · U 悔棋 · ESC 菜单")
+        pygame.display.set_caption("五子棋（M4）｜ 1-6 模式 · R 重开 · U 悔棋 · ESC 菜单")
         self.size = size
         self.board_size = size * CELL + 2 * MARGIN
         self.screen = pygame.display.set_mode((self.board_size, self.board_size + PANEL_H))
         self.font = pygame.font.SysFont("microsoftyahei", 24)
         self.menu_font = pygame.font.SysFont("microsoftyahei", 26)
-        self.sims = sims
         self.board = Board(size)
         self.message = "黑方先手"
         self._win_line: list[tuple[int, int]] | None = None
+
+        # 网络引擎（加载 checkpoint；缺失时 AI 网络档自动回退纯 MCTS）
+        self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        if net is not None:
+            self._net = net.to(self._device)
+            self._net_loaded = True
+        else:
+            self._net, self._net_loaded = None, False
+            try:
+                self._net = net_from_checkpoint(DEFAULT_CHECKPOINT, device=self._device)
+                self._net_loaded = True
+            except FileNotFoundError:
+                pass
+        if self._net_loaded:
+            self._net.eval()
 
         # 对局模式状态
         self.screen_state = "game" if mode is not None else "menu"
         self.mode: str | None = mode            # pvp / pvc / cvc
         self.ai_player: int | None = ai_player  # pvc 模式下 AI 执子颜色
+        self.engine: str = engine              # mcts / net
+        self.ai_sims: int = sims
         self._ai_thread: threading.Thread | None = None
         self._ai_result: "queue.Queue[int]" = queue.Queue()
         if mode is not None:
-            self._enter_mode(mode, ai_player)
+            self._enter_mode(mode, ai_player, engine, sims)
 
     # ---------- 模式 ----------
-    def _enter_mode(self, mode: str, ai_player: int | None = None) -> None:
+    def _enter_mode(self, mode: str, ai_player: int | None = None,
+                    engine: str = "mcts", sims: int = 200) -> None:
         self.mode = mode
         self.ai_player = ai_player
+        self.engine = engine
+        self.ai_sims = sims
         self._reset_board()
         self.screen_state = "game"
 
@@ -100,8 +128,8 @@ class GomokuApp:
                     pygame.quit()
                     raise SystemExit
                 if event.key in MODES:
-                    m, ai, _ = MODES[event.key]
-                    self._enter_mode(m, ai)
+                    m, ai, eng, sims, _ = MODES[event.key]
+                    self._enter_mode(m, ai, eng, sims)
                 return
             if event.key == pygame.K_r:
                 self._reset_board()
@@ -188,14 +216,23 @@ class GomokuApp:
             return self.board.to_play == self.ai_player
         return False
 
+    def _make_engine(self):
+        """按当前档位构造引擎；网络档缺模型时回退纯 MCTS。"""
+        if self.engine == "net" and self._net is not None:
+            return NetPlayer(self._net, sims=self.ai_sims, device=self._device)
+        return MCTSPlayer(sims=self.ai_sims)
+
     def _maybe_start_ai(self) -> None:
         if not self._ai_active():
             return
         if self._ai_thread is not None and self._ai_thread.is_alive():
             return
         b = self.board.copy()
-        engine = MCTSPlayer(sims=self.sims)
-        self.message = "AI 思考中…"
+        engine = self._make_engine()
+        if self.engine == "net" and self._net is None:
+            self.message = "未找到网络模型，回退纯 MCTS"
+        else:
+            self.message = "AI 思考中…"
         self._ai_thread = threading.Thread(target=self._compute_ai, args=(b, engine), daemon=True)
         self._ai_thread.start()
 

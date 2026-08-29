@@ -66,13 +66,19 @@ def test_gui_menu_navigation():
     app = GomokuApp()  # 默认进主菜单
     try:
         assert app.screen_state == "menu"
-        # 按键 2 → 人 vs AI（人执黑 = AI 执白）
+        # 按键 2 → 人 vs AI·低（纯 MCTS 200，AI 执白）
         app.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_2))
         assert app.screen_state == "game"
         assert app.mode == "pvc"
         assert app.ai_player == gui.WHITE
+        assert app.engine == "mcts"
+        assert app.ai_sims == 200
         # ESC 回菜单
         app.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_ESCAPE))
         assert app.screen_state == "menu"
+        # 按键 4 → 人 vs AI·高（网络 800）
+        app.handle_event(pygame.event.Event(pygame.KEYDOWN, key=pygame.K_4))
+        assert app.engine == "net"
+        assert app.ai_sims == 800
     finally:
         pygame.quit()
