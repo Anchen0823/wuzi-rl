@@ -50,14 +50,30 @@ def train_epoch(net, optimizer, buffer: ReplayBuffer, steps: int, batch_size: in
     return total / n, pi_loss / n, v_loss / n
 
 
-def run_iteration(net, optimizer, buffer: ReplayBuffer, cfg, device, rng, log=print) -> dict:
-    """一个迭代：自对弈 cfg.games_per_iter 局（增强入池）→ 训练约一个 epoch。"""
-    for _ in range(cfg.games_per_iter):
-        samples = play_game(
-            net, cfg.sims_train, cfg.c_puct, cfg.temp_steps, cfg.temp,
-            cfg.dirichlet_alpha, cfg.dirichlet_eps, batch_size=64, device=device, rng=rng,
+def run_iteration(net, optimizer, buffer: ReplayBuffer, cfg, device, rng,
+                  log=print, workers: int = 1) -> dict:
+    """一个迭代：自对弈 cfg.games_per_iter 局（增强入池）→ 训练约一个 epoch。
+
+    workers>1 时启用多进程并行自对弈（v2，见 DESIGN.md §8.2）。
+    """
+    if workers > 1:
+        from .selfplay_parallel import parallel_selfplay
+
+        samples = parallel_selfplay(
+            net, cfg.games_per_iter, n_workers=workers,
+            sims=cfg.sims_train, c_puct=cfg.c_puct,
+            temp_steps=cfg.temp_steps, temp=cfg.temp,
+            dirichlet_alpha=cfg.dirichlet_alpha, dirichlet_eps=cfg.dirichlet_eps,
+            batch_size=64, device=str(device), seed=rng.randrange(1 << 30),
         )
-        buffer.add_game(augment_samples(samples))
+        buffer.add_game(samples)
+    else:
+        for _ in range(cfg.games_per_iter):
+            samples = play_game(
+                net, cfg.sims_train, cfg.c_puct, cfg.temp_steps, cfg.temp,
+                cfg.dirichlet_alpha, cfg.dirichlet_eps, batch_size=64, device=device, rng=rng,
+            )
+            buffer.add_game(augment_samples(samples))
     steps = max(1, len(buffer) // cfg.batch_size)
     avg = train_epoch(net, optimizer, buffer, steps, cfg.batch_size, cfg.lambda_l2, device, rng)
     log(f"迭代自对弈完成：新增 {cfg.games_per_iter} 局，经验池 {len(buffer)} 条样本")

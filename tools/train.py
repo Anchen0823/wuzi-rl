@@ -49,6 +49,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--lr", type=float, default=None)
     ap.add_argument("--eval-baseline-every", type=int, default=0,
                     help="每 N 迭代对战一次贪心/随机基线并记录（0=关闭）")
+    ap.add_argument("--workers", type=int, default=1,
+                    help="并行自对弈进程数（v2，>1 时启用，吞吐约 2-4 倍）")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--checkpoint", default=None, help="续训：加载已有 checkpoint")
     ap.add_argument("--out", default="checkpoints/net.pt")
@@ -94,7 +96,7 @@ def main(argv: list[str] | None = None) -> int:
 
     for it in range(start_iter, start_iter + args.iters):
         t0 = time.time()
-        res = run_iteration(net, optimizer, buffer, cfg, device, rng)
+        res = run_iteration(net, optimizer, buffer, cfg, device, rng, workers=args.workers)
         dt = time.time() - t0
         adopted = maybe_adopt(net, best_net, cfg, device, rng)
         if adopted:
