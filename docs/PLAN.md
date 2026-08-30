@@ -162,7 +162,14 @@ MCTS(当前最佳) ──对局──► (s, π, z) ──► 经验池(最近N�
 
 1. ✅ **强化训练（阶段性）**：
    - 验证训练（8 迭代，games/iter=15）+ 长训（4 迭代，games/iter=100）：12 迭代 **loss 6.59 → 2.43（-63%）**，评估门采纳 4 次（迭代 3/6/8/10），自对弈 RL 闭环收敛有效（runs/history.csv、runs/history_long.csv）。
-   - 🔄 持续长训：默认配置（games/iter=500、sims_eval=800、评估门 200 局）挂机 2–5 天 GPU 以达成最终棋力目标。
+   - ✅ 持续长训第 1 段（games/iter=300、sims 200/600、arena=50）：迭代 13–15 **loss 2.578 → 2.330**，评估门采纳 2 次（迭代 14/15），迭代 14 vs 随机 4:0 / vs 贪心 0:4（runs/history_long2.csv）。
+   - ⏸️ **已按用户要求暂存**（迭代 15 后）：checkpoint `checkpoints/net.pt` 与记录完好；恢复命令见下。
+   - 🔄 恢复后继续（迭代 16 起，默认配置挂机 2–5 天 GPU 以达成最终棋力）：
+     ```
+     python tools/train.py --iters 1 --games-per-iter 300 --sims-train 200 --sims-eval 600 `
+         --arena-games 50 --batch-size 512 --eval-baseline-every 2 `
+         --checkpoint checkpoints/net.pt --out checkpoints/net.pt --history runs/history_long2.csv
+     ```
 2. ✅ **网络接入 GUI 正式对战**：主菜单 1-6（人vs人 / 人vsAI 低-中-高 / 人执白·高 / AIvsAI 观战）；网络引擎从 `checkpoints/net.pt` 加载（架构自动推断），缺失自动回退纯 MCTS；后台线程 GPU 推理。
 3. ✅ **人机体验打磨**：难度档细分、AI 思考状态显示；界面人工验收与对局回放已并入 M5（回放已完成）。
 4. ✅ **棋力验收（实测，网络 sims=400）**：
