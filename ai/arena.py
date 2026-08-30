@@ -24,8 +24,12 @@ def play_net_vs_net(
     return b.winner
 
 
-def evaluate_nets(net_a, net_b, games: int, sims: int, device=None, seed: int = 0) -> dict:
-    """net_a vs net_b 共 games 局（自动换边），返回 {'a': 胜场, 'b': 胜场, 'draw': 和棋}。"""
+def evaluate_nets(net_a, net_b, games: int, sims: int, device=None, seed: int = 0,
+                  progress=None) -> dict:
+    """net_a vs net_b 共 games 局（自动换边），返回 {'a': 胜场, 'b': 胜场, 'draw': 和棋}。
+
+    progress: 可选回调 (done, total)，每局结束调用（进度显示）。
+    """
     rng = random.Random(seed)
     stats = {"a": 0, "b": 0, "draw": 0}
     for i in range(games):
@@ -35,13 +39,19 @@ def evaluate_nets(net_a, net_b, games: int, sims: int, device=None, seed: int = 
             w = play_net_vs_net(net_b, net_a, sims, device, rng)
             w = DRAW if w == DRAW else (WHITE if w == BLACK else BLACK)
         stats["a" if w == BLACK else ("b" if w == WHITE else "draw")] += 1
+        if progress:
+            progress(i + 1, games)
     return stats
 
 
 def evaluate_vs_player(
     net, player_factory, games: int, sims: int, device=None, seed: int = 0,
+    progress=None,
 ) -> dict:
-    """网络 vs 基线引擎（player_factory 无参构造），返回 {'net': 胜场, 'player': 胜场, 'draw'}。"""
+    """网络 vs 基线引擎（player_factory 无参构造），返回 {'net': 胜场, 'player': 胜场, 'draw'}。
+
+    progress: 可选回调 (done, total)，每局结束调用。
+    """
     rng = random.Random(seed)
     stats = {"net": 0, "player": 0, "draw": 0}
     for i in range(games):
@@ -62,4 +72,6 @@ def evaluate_vs_player(
             w = b.winner
             w = DRAW if w == DRAW else (WHITE if w == BLACK else BLACK)
         stats["net" if w == BLACK else ("player" if w == WHITE else "draw")] += 1
+        if progress:
+            progress(i + 1, games)
     return stats

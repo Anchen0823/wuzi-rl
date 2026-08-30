@@ -8,6 +8,7 @@ from __future__ import annotations
 import csv
 import math
 import random
+import time
 from pathlib import Path
 
 import numpy as np
@@ -36,16 +37,35 @@ def train_step(net, optimizer, s, pi, z, lambda_l2: float, device) -> tuple[floa
     return float(loss.item()), float(loss_pi.item()), float(loss_v.item())
 
 
+def _progress_report(log, tag: str, done: int, total: int, t0: float, every: int | None = None) -> None:
+    """进度报告：每 every 个单位打印一次（含已用/预计剩余时间）。
+
+    自研实现（不引第三方进度库），每行独立输出，对管道/日志友好。
+    """
+    if total <= 0 or done <= 0:
+        return
+    if every is None:
+        every = max(1, total // 10)
+    if done % every != 0 and done != total:
+        return
+    elapsed = time.time() - t0
+    remaining = elapsed / done * (total - done)
+    log(f"[{tag}] {done}/{total} ({done / total * 100:.0f}%) | "
+        f"已用 {elapsed:.0f}s | 预计剩余 {remaining:.0f}s")
+
+
 def train_epoch(net, optimizer, buffer: ReplayBuffer, steps: int, batch_size: int,
-                lambda_l2: float, device, rng) -> tuple[float, float, float]:
+                lambda_l2: float, device, rng, log=print) -> tuple[float, float, float]:
     """从经验池采样训练 steps 步，返回平均 (总, 策略, 价值) 损失。"""
     total = pi_loss = v_loss = 0.0
-    for _ in range(steps):
+    t0 = time.time()
+    for i in range(steps):
         s, pi, z = buffer.sample_batch(batch_size, rng)
         l, lp, lv = train_step(net, optimizer, s, pi, z, lambda_l2, device)
         total += l
         pi_loss += lp
         v_loss += lv
+        _progress_report(log, "训练", i + 1, steps, t0, every=max(100, steps // 10))
     n = max(steps, 1)
     return total / n, pi_loss / n, v_loss / n
 
@@ -65,28 +85,37 @@ def run_iteration(net, optimizer, buffer: ReplayBuffer, cfg, device, rng,
             temp_steps=cfg.temp_steps, temp=cfg.temp,
             dirichlet_alpha=cfg.dirichlet_alpha, dirichlet_eps=cfg.dirichlet_eps,
             batch_size=64, device=str(device), seed=rng.randrange(1 << 30),
+            log=log,
         )
         buffer.add_game(samples)
     else:
-        for _ in range(cfg.games_per_iter):
+        t0 = time.time()
+        for i in range(cfg.games_per_iter):
             samples = play_game(
                 net, cfg.sims_train, cfg.c_puct, cfg.temp_steps, cfg.temp,
                 cfg.dirichlet_alpha, cfg.dirichlet_eps, batch_size=64, device=device, rng=rng,
             )
             buffer.add_game(augment_samples(samples))
+            _progress_report(log, "自对弈", i + 1, cfg.games_per_iter, t0)
     steps = max(1, len(buffer) // cfg.batch_size)
-    avg = train_epoch(net, optimizer, buffer, steps, cfg.batch_size, cfg.lambda_l2, device, rng)
+    avg = train_epoch(net, optimizer, buffer, steps, cfg.batch_size, cfg.lambda_l2, device, rng, log=log)
     log(f"迭代自对弈完成：新增 {cfg.games_per_iter} 局，经验池 {len(buffer)} 条样本")
     return {"loss": avg[0], "loss_pi": avg[1], "loss_v": avg[2], "buffer": len(buffer)}
 
 
-def maybe_adopt(net, best_net, cfg, device, rng) -> bool:
+def maybe_adopt(net, best_net, cfg, device, rng, log=print) -> bool:
     """评估门：新网 vs 当前最佳，胜率 ≥ 阈值则采纳。返回是否采纳。"""
-    stats = evaluate_nets(net, best_net, cfg.arena_games, cfg.sims_eval, device, seed=rng.randrange(1 << 30))
+    t0 = time.time()
+
+    def prog(done, total):
+        _progress_report(log, "评估门", done, total, t0, every=max(1, cfg.arena_games // 10))
+
+    stats = evaluate_nets(net, best_net, cfg.arena_games, cfg.sims_eval, device,
+                          seed=rng.randrange(1 << 30), progress=prog)
     total = stats["a"] + stats["b"] + stats["draw"]
     winrate = stats["a"] / total if total else 0.0
     adopted = winrate >= cfg.arena_threshold
-    print(f"评估门：新网 vs 最佳 {stats}，胜率 {winrate:.1%}，{'采纳' if adopted else '保留最佳'}")
+    log(f"评估门：新网 vs 最佳 {stats}，胜率 {winrate:.1%}，{'采纳' if adopted else '保留最佳'}")
     return adopted
 
 
