@@ -68,12 +68,15 @@ def parallel_selfplay(
     batch_size: int = 64,
     device: str | None = None,
     seed: int = 0,
+    log=print,
 ) -> list:
     """并行自对弈 n_games 局，返回增强样本列表（[(s, pi, z)]）。
 
     注意：worker 均从同一个 checkpoint 权重出发，各局互不影响；
     调用方负责在全部结束后加载最新网络再进入下一阶段。
     """
+    import time
+
     import torch
 
     if device is None:
@@ -102,7 +105,16 @@ def parallel_selfplay(
     ]
     for p in procs:
         p.start()
-    games = [queue.get() for _ in range(n_games)]
+    t0 = time.time()
+    games = []
+    every = max(1, n_games // 10)
+    for i in range(n_games):
+        games.append(queue.get())
+        if (i + 1) % every == 0 or i + 1 == n_games:
+            elapsed = time.time() - t0
+            remaining = elapsed / (i + 1) * (n_games - i - 1)
+            log(f"[并行自对弈] {i + 1}/{n_games} ({(i + 1) / n_games * 100:.0f}%) | "
+                f"已用 {elapsed:.0f}s | 预计剩余 {remaining:.0f}s")
     for p in procs:
         p.join()
     return [s for game in games for s in game]
