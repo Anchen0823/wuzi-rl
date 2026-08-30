@@ -108,6 +108,8 @@ def main(argv: list[str] | None = None) -> int:
             "buffer": res["buffer"],
             "adopted": adopted,
             "seconds": round(dt, 1),
+            "vs_random": "",
+            "vs_greedy": "",
         }
         # 定期对战基线，观察学习曲线（vs 贪心更能反映棋力成长）
         if args.eval_baseline_every > 0 and (it + 1) % args.eval_baseline_every == 0:
