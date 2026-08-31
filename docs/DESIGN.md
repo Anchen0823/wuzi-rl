@@ -178,7 +178,8 @@ class Board:
 
 - v1：单进程 + GPU 批量叶子评估（§7.2），实测约 11–13 秒/局（sims=200）。
 - v2（已实现，`ai/selfplay_parallel.py`）：N 个 worker 进程各自独立跑 MCTS（各自持只读网络权重、自行批量 GPU 评估），CPU 树搜索与 GPU 评估并行重叠，吞吐约 2–4 倍；`tools/train.py --workers N` 启用；worker 经 multiprocessing spawn 启动，权重以 state_dict 传递，不改变单进程路径。
-- 注：当前过夜长训仍用 v1（单进程，已验证稳定）；后续大规模长训可切换 v2。
+- **v2 实测**（sims=50，8 局，全尺寸网络，RTX 4060）：加速比 **1.6x**（4 并行 2.1s/局 vs 单进程 3.3s/局）。低于理论上限：低模拟数时 GPU 未被充分占用、spawn/队列开销占比高；sims=200 生产配置下 CPU/GPU 重叠更多，预期 2–3x。
+- 注：当前过夜长训仍用 v1（单进程，已验证稳定）；后续大规模长训可切换 v2（--workers 4，实测收益约 1.6–3x）。
 
 ### 8.3 公平性
 
