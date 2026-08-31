@@ -37,7 +37,8 @@ COLORS = {
     "last": (255, 80, 80),     # 上一手 / 胜利连线高亮
 }
 NAME = {BLACK: "黑方", WHITE: "白方"}
-DEFAULT_CHECKPOINT = "checkpoints/net.pt"
+DEFAULT_CHECKPOINT = "checkpoints/best.pt"   # 最强模型（评估门采纳）
+FALLBACK_CHECKPOINT = "checkpoints/net.pt"   # 最新模型兜底
 GAME_DIR = "runs/games"   # 对局记录（回放数据源）
 
 # 主菜单：按键 → (模式, AI 执子, 引擎, 模拟数, 说明)
@@ -81,18 +82,20 @@ class GomokuApp:
         self.message = "黑方先手"
         self._win_line: list[tuple[int, int]] | None = None
 
-        # 网络引擎（加载 checkpoint；缺失时 AI 网络档自动回退纯 MCTS）
+        # 网络引擎（加载最强模型 best.pt，缺失回退最新 net.pt；均缺失时网络档自动回退纯 MCTS）
         self._device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         if net is not None:
             self._net = net.to(self._device)
             self._net_loaded = True
         else:
             self._net, self._net_loaded = None, False
-            try:
-                self._net = net_from_checkpoint(DEFAULT_CHECKPOINT, device=self._device)
-                self._net_loaded = True
-            except FileNotFoundError:
-                pass
+            for path in (DEFAULT_CHECKPOINT, FALLBACK_CHECKPOINT):
+                try:
+                    self._net = net_from_checkpoint(path, device=self._device)
+                    self._net_loaded = True
+                    break
+                except FileNotFoundError:
+                    continue
         if self._net_loaded:
             self._net.eval()
 
