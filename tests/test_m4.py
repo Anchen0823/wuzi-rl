@@ -47,6 +47,35 @@ def test_checkpoint_roundtrip_and_arch_inference(tmp_path):
     assert torch.allclose(v1, v2, atol=1e-6)
 
 
+def test_checkpoint_without_optimizer(tmp_path):
+    """best.pt 场景：仅保存模型（optimizer=None）可正常保存/加载。"""
+    net = make_net()
+    path = str(tmp_path / "best.pt")
+    save_checkpoint(net, None, path, {"iteration": 5, "adopted": True})
+    net2 = net_from_checkpoint(path, device="cpu")
+    assert net2.num_params() == net.num_params()
+    meta = torch.load(path, map_location="cpu")["meta"]
+    assert meta["adopted"] is True
+
+
+def test_gui_prefers_best_checkpoint(tmp_path, monkeypatch):
+    """best.pt 与 net.pt 同时存在时，GUI 优先加载 best.pt。"""
+    net_best = make_net(n_filters=32)
+    net_latest = make_net(n_filters=64)   # 不同架构，便于区分
+    best_path = tmp_path / "best.pt"
+    net_path = tmp_path / "net.pt"
+    save_checkpoint(net_best, None, str(best_path))
+    save_checkpoint(net_latest, None, str(net_path))
+    monkeypatch.setattr("gomoku.gui.DEFAULT_CHECKPOINT", str(best_path))
+    monkeypatch.setattr("gomoku.gui.FALLBACK_CHECKPOINT", str(net_path))
+    app = GomokuApp()   # 默认主菜单（会触发网络加载）
+    try:
+        assert app._net_loaded
+        assert app._net.stem[0].weight.shape[0] == 32   # 加载的是 best（32 通道）
+    finally:
+        pygame.quit()
+
+
 def test_net_player_moves_legally():
     net = make_net().to(DEV)
     b = Board()
@@ -81,8 +110,9 @@ def test_gui_cvc_net_mode_completes():
 
 
 def test_gui_net_fallback_when_no_checkpoint(tmp_path, monkeypatch):
-    """网络档但无 checkpoint → 回退纯 MCTS 并提示。"""
-    monkeypatch.setattr("gomoku.gui.DEFAULT_CHECKPOINT", str(tmp_path / "missing.pt"))
+    """网络档但无 checkpoint（best/net 均缺失）→ 回退纯 MCTS 并提示。"""
+    monkeypatch.setattr("gomoku.gui.DEFAULT_CHECKPOINT", str(tmp_path / "missing_best.pt"))
+    monkeypatch.setattr("gomoku.gui.FALLBACK_CHECKPOINT", str(tmp_path / "missing_net.pt"))
     app = GomokuApp(mode="pvc", engine="net", sims=20, ai_player=WHITE)
     try:
         assert app._net is None

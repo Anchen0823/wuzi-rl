@@ -2,7 +2,7 @@
 
 用法：
     python tools/eval.py --games 20 --sims 200 --p1 mcts --p2 greedy
-    python tools/eval.py --games 10 --sims 400 --p1 net --p2 greedy   # 网络引擎（加载 checkpoints/net.pt）
+    python tools/eval.py --games 10 --sims 400 --p1 net --p2 greedy   # 网络引擎（优先加载 best.pt）
 """
 
 from __future__ import annotations
@@ -20,17 +20,23 @@ from gomoku.board import Board, BLACK, WHITE, DRAW
 from ai.players import RandomPlayer, GreedyPlayer, MCTSPlayer, NetPlayer
 from ai.train import net_from_checkpoint
 
+
+def _load_net():
+    """加载最强模型（best.pt），缺失回退最新（net.pt）。"""
+    dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    for path in ("checkpoints/best.pt", "checkpoints/net.pt"):
+        try:
+            return net_from_checkpoint(path, device=dev)
+        except FileNotFoundError:
+            continue
+    raise FileNotFoundError("未找到 checkpoints/best.pt 或 checkpoints/net.pt")
+
+
 FACTORIES = {
     "random": lambda sims: RandomPlayer(),
     "greedy": lambda sims: GreedyPlayer(),
     "mcts": lambda sims: MCTSPlayer(sims=sims, seed=0),
-    "net": lambda sims: NetPlayer(
-        net_from_checkpoint(
-            "checkpoints/net.pt",
-            torch.device("cuda" if torch.cuda.is_available() else "cpu"),
-        ),
-        sims=sims, seed=0,
-    ),
+    "net": lambda sims: NetPlayer(_load_net(), sims=sims, seed=0),
 }
 
 

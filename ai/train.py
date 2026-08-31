@@ -120,12 +120,16 @@ def maybe_adopt(net, best_net, cfg, device, rng, log=print) -> bool:
 
 
 def save_checkpoint(net, optimizer, path, meta: dict | None = None) -> None:
+    """保存 checkpoint。optimizer 可空（仅保存模型，如 best.pt）。"""
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     meta = dict(meta or {})
     meta.setdefault("n_blocks", len(net.blocks))
     meta.setdefault("n_filters", net.stem[0].weight.shape[0])
     meta.setdefault("board_size", net.board_size)
-    torch.save({"model": net.state_dict(), "optimizer": optimizer.state_dict(), "meta": meta}, path)
+    payload = {"model": net.state_dict(), "meta": meta}
+    if optimizer is not None:
+        payload["optimizer"] = optimizer.state_dict()
+    torch.save(payload, path)
 
 
 def net_from_checkpoint(path, device=None) -> "GomokuNet":

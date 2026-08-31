@@ -57,6 +57,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--history", default="runs/history.csv")
     args = ap.parse_args(argv)
 
+    BEST_OUT = "checkpoints/best.pt"   # 评估门采纳的“最强模型”（GUI/对战优先加载）
+
     overrides = {}
     if args.games_per_iter:
         overrides["games_per_iter"] = args.games_per_iter
@@ -101,6 +103,7 @@ def main(argv: list[str] | None = None) -> int:
         adopted = maybe_adopt(net, best_net, cfg, device, rng)
         if adopted:
             best_net.load_state_dict(net.state_dict())
+            save_checkpoint(best_net, None, BEST_OUT, {"iteration": it + 1})  # 最强模型
         save_checkpoint(net, optimizer, args.out, {"iteration": it + 1})
         row = {
             "iteration": it + 1,
@@ -127,6 +130,10 @@ def main(argv: list[str] | None = None) -> int:
     for name, fac in (("random", RandomPlayer), ("greedy", GreedyPlayer)):
         st = evaluate_vs_player(net, fac, 4, min(cfg.sims_eval, 100), device, seed=1)
         print(f"  vs {name}: {st}")
+    # 若本段从未采纳且无历史 best.pt，落盘当前网络作为 best 兜底
+    if not Path(BEST_OUT).exists():
+        save_checkpoint(best_net, None, BEST_OUT, {"iteration": start_iter + args.iters})
+        print(f"无采纳记录，best.pt 使用初始/续训网络（{BEST_OUT}）")
     return 0
 
 
