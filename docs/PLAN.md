@@ -164,7 +164,14 @@ MCTS(当前最佳) ──对局──► (s, π, z) ──► 经验池(最近N�
    - 验证训练（8 迭代，games/iter=15）+ 长训（4 迭代，games/iter=100）：12 迭代 **loss 6.59 → 2.43（-63%）**，评估门采纳 4 次（迭代 3/6/8/10），自对弈 RL 闭环收敛有效（runs/history.csv、runs/history_long.csv）。
    - ✅ 持续长训第 1 段（games/iter=300、sims 200/600、arena=50）：迭代 13–15 **loss 2.578 → 2.330**，评估门采纳 2 次（迭代 14/15），迭代 14 vs 随机 4:0 / vs 贪心 0:4（runs/history_long2.csv）。
    - ✅ **过夜长训**（迭代 16–23，约 16h，batch 256 防显存不足）：**loss 2.475 → 2.281**（历史最低），评估门采纳 3 次（迭代 18/20），vs 贪心基线 5 个数据点全部 0:4；累计 23 迭代 / ~2300+ 局自对弈。
-   - 🔄 持续长训（目标 vs 贪心 ≥90%）：继续挂机可沿 `--checkpoint checkpoints/net.pt` 续训（命令同上，games/iter 可升回 500）。
+   - 🔄 持续长训（目标 vs 贪心 ≥90%）：当前 checkpoint 为迭代 23（`checkpoints/net.pt`，`best.pt` 同版本）；续训命令：
+      ```
+      python tools/train.py --iters 8 --games-per-iter 300 --sims-train 200 --sims-eval 600 `
+          --arena-games 30 --batch-size 512 --eval-baseline-every 2 `
+          --checkpoint checkpoints/net.pt --out checkpoints/net.pt --history runs/history_long3.csv
+      # 加速可选：加 --workers 4（v2 并行自对弈，实测 1.6–3x）；batch 512 需确认系统显存占用（>2GB 空闲时）
+      ```
+      备注：新增 best.pt 机制（采纳时保存最强模型，GUI/对战优先加载），后续训练自动维护。
 2. ✅ **网络接入 GUI 正式对战**：主菜单 1-6（人vs人 / 人vsAI 低-中-高 / 人执白·高 / AIvsAI 观战）；网络引擎从 `checkpoints/net.pt` 加载（架构自动推断），缺失自动回退纯 MCTS；后台线程 GPU 推理。
 3. ✅ **人机体验打磨**：难度档细分、AI 思考状态显示；界面人工验收与对局回放已并入 M5（回放已完成）。
 4. ✅ **棋力验收（实测，网络 sims=400）**：
