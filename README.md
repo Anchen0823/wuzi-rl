@@ -29,7 +29,13 @@ vs 纯 MCTS（限时）：100%（6:0）  ✅
 vs 贪心启发式：0%（0:10） ❌  ← 目标 ≥90%，需继续训练
 ```
 
-自对弈 RL 闭环已验证正确收敛；当前网络是**业余入门级**——能完胜随机与限时纯 MCTS，但还打不过手写战术启发式。继续训练路径：`tools/train.py --iters N --checkpoint checkpoints/net.pt`（详见 PLAN §12）。
+上述历史训练记录显示 loss 下降及小样本基线对局结果，尚不足以证明收敛或人类棋力等级；对贪心启发式的目标仍未达到。继续训练路径：`tools/train.py --iters N --checkpoint checkpoints/net.pt`（详见 PLAN §12）。训练产物未入库，克隆仓库不会自动获得这份历史模型。
+
+### 首次克隆后的 AI 行为
+
+GUI 优先加载 `checkpoints/best.pt`，缺失时尝试 `checkpoints/net.pt`；两者都不存在时，网络难度档会回退为纯 MCTS，并显示提示。人机可玩与已加载训练模型是两个不同状态。
+
+GUI 根据 PyTorch 的 CUDA 可用性选择 GPU 或 CPU。没有 NVIDIA GPU 也有 CPU 执行路径，但训练和搜索速度取决于硬件；后面的 RTX 4060 配置是原开发环境记录。
 
 ## 文档
 
@@ -48,6 +54,8 @@ vs 贪心启发式：0%（0:10） ❌  ← 目标 ≥90%，需继续训练
 
 ```powershell
 # 1. 创建虚拟环境并安装依赖（PyTorch 用 CUDA 版 wheel）
+git clone https://github.com/Anchen0823/wuzi-rl.git
+cd wuzi-rl
 python -m venv .venv
 .\.venv\Scripts\python -m pip install pygame-ce numpy pytest
 .\.venv\Scripts\python -m pip install torch --index-url https://download.pytorch.org/whl/cu126
@@ -87,6 +95,17 @@ python tools\dep_audit.py --check-installed   # 连同已装 pip 包一起审计
 ```
 
 产物：`checkpoints/net.pt`（模型+优化器+迭代元数据）、`runs/history.csv`（损失/采纳/耗时曲线）。
+
+## 代码导航
+
+| 目录 | 内容 |
+| --- | --- |
+| [gomoku](gomoku/) | 棋盘规则、对局状态和 pygame 界面 |
+| [ai](ai/) | MCTS、策略价值网络、自对弈、训练和评估 |
+| [tools](tools/) | 训练、评估、记录汇总和依赖审计入口 |
+| [tests](tests/) | 规则、搜索、训练管线与 GUI 测试 |
+
+README 中的训练时长、胜率和测试数量是对应日期的历史记录；修改代码或重新训练后需要重新验证。
 
 ## 许可证
 
